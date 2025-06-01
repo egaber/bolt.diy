@@ -8,7 +8,6 @@ import { allowedHTMLElements } from '~/utils/markdown';
 import { LLMManager } from '~/lib/modules/llm/manager';
 import { createScopedLogger } from '~/utils/logger';
 import { createFilesContext, extractPropertiesFromMessage } from './utils';
-import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 
 export type Messages = Message[];
 
@@ -188,6 +187,8 @@ export async function streamText(props: {
 
   // console.log(systemPrompt, processedMessages);
 
+  const systemMessageForDiscuss = 'You are a helpful assistant.'; // Simplified prompt
+
   return await _streamText({
     model: provider.getModelInstance({
       model: modelDetails.name,
@@ -195,7 +196,7 @@ export async function streamText(props: {
       apiKeys,
       providerSettings,
     }),
-    system: chatMode === 'build' ? systemPrompt : discussPrompt(),
+    system: chatMode === 'build' ? systemPrompt : systemMessageForDiscuss, // Use simplified prompt for discuss mode
     maxTokens: dynamicMaxTokens,
     messages: convertToCoreMessages(processedMessages as any),
     ...options,

@@ -194,10 +194,22 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           onFinish: async ({ text: content, finishReason, usage }) => {
             logger.debug('usage', JSON.stringify(usage));
 
+            // Log the raw usage object
+            console.log('Raw usage from LLM provider:', usage);
+
             if (usage) {
-              cumulativeUsage.completionTokens += usage.completionTokens || 0;
-              cumulativeUsage.promptTokens += usage.promptTokens || 0;
-              cumulativeUsage.totalTokens += usage.totalTokens || 0;
+              const promptTokens =
+                typeof usage.promptTokens === 'number' && !isNaN(usage.promptTokens) ? usage.promptTokens : 0;
+              const completionTokens =
+                typeof usage.completionTokens === 'number' && !isNaN(usage.completionTokens)
+                  ? usage.completionTokens
+                  : 0;
+              const totalTokens =
+                typeof usage.totalTokens === 'number' && !isNaN(usage.totalTokens) ? usage.totalTokens : 0;
+
+              cumulativeUsage.completionTokens += completionTokens;
+              cumulativeUsage.promptTokens += promptTokens;
+              cumulativeUsage.totalTokens += totalTokens;
             }
 
             if (finishReason !== 'length') {

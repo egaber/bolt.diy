@@ -26,6 +26,9 @@ interface VSCodeChatResponse {
     vendor: string;
     family: string;
     name: string;
+    promptTokens?: number; // Added to capture potential token info
+    completionTokens?: number; // Added to capture potential token info
+    totalTokens?: number; // Added to capture potential token info
   };
   error?: string;
 }
@@ -118,97 +121,177 @@ export default class VSLLMProvider extends BaseProvider {
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
   }): LanguageModelV1 {
-    const { model } = options;
+    const { model: modelNameOption } = options; // Renamed to avoid conflict with result.model
 
-    // Create a custom provider that talks to the VS Code extension
     const vsCodeProvider = createOpenAI({
-      baseURL: 'http://localhost:3000',
-      apiKey: 'no-key-needed', // Dummy key since the extension doesn't need auth
+      baseURL: 'http://localhost:3000', // This will be overridden by fetch
+      apiKey: 'no-key-needed',
       fetch: async (url, requestOptions) => {
         try {
-          // Parse the original request body from OpenAI format
-          const originalBody = JSON.parse((requestOptions?.body as string) || '{}');
-
-          // Extract message content - VS Code extension expects simple { content: "..." } objects
-          const messages =
-            originalBody.messages?.map((msg: any) => {
-              let content;
-
-              if (typeof msg.content === 'string') {
-                content = msg.content;
-              } else if (Array.isArray(msg.content)) {
-                // Extract text content from array format
-                const textPart = msg.content.find((part: any) => part.type === 'text');
-                content = textPart?.text || '';
-              } else {
-                content = '';
-              }
-
-              return { content };
-            }) || [];
+          const originalRequestBody = JSON.parse((requestOptions?.body as string) || '{}');
+          const isStreamingRequest = originalRequestBody.stream === true;
 
           /*
-           * Format request body for VS Code extension
-           * Note: VS Code extension auto-selects model, so we don't specify it
+           * Fetch the complete response from the VS Code extension server
+           * (This part remains the same, as the extension provides a single response)
            */
-          const vsCodeBody = {
-            messages,
-            options: {},
-          };
-
-          // Make the actual request to the VS Code extension server
-          const response = await fetch('http://localhost:3000/api/chat', {
+          const vsCodeExtensionResponse = await fetch('http://localhost:3000/api/chat', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+
+              // Pass through any other relevant headers from requestOptions if necessary
             },
-            body: JSON.stringify(vsCodeBody),
+
+            // Construct the body for the VS Code extension based on originalRequestBody.messages
+            body: JSON.stringify({
+              messages:
+                originalRequestBody.messages?.map((msg: any) => {
+                  let content;
+
+                  if (typeof msg.content === 'string') {
+                    content = msg.content;
+                  } else if (Array.isArray(msg.content)) {
+                    const textPart = msg.content.find((part: any) => part.type === 'text');
+                    content = textPart?.text || '';
+                  } else {
+                    content = '';
+                  }
+
+                  return { content };
+                }) || [],
+
+              // model and other options for VSCode extension if needed
+            }),
           });
 
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`VS Code LLM Bridge error (${response.status}): ${errorText}`);
-            throw new Error(`VS Code LLM Bridge error: ${response.statusText}`);
+          if (!vsCodeExtensionResponse.ok) {
+            const errorText = await vsCodeExtensionResponse.text();
+            console.error(`VS Code LLM Bridge error (${vsCodeExtensionResponse.status}): ${errorText}`);
+            throw new Error(`VS Code LLM Bridge error: ${vsCodeExtensionResponse.statusText}`);
           }
 
-          const result = (await response.json()) as VSCodeChatResponse;
+          const result = (await vsCodeExtensionResponse.json()) as VSCodeChatResponse;
 
           if (!result.success) {
             console.error('VS Code LLM error:', result.error);
             throw new Error(`VS Code LLM error: ${result.error}`);
           }
 
-          // Transform response back to OpenAI format
-          const openAIResponse = {
-            choices: [
-              {
-                index: 0,
-                message: {
-                  content: result.response || '',
-                  role: 'assistant',
-                },
-                finish_reason: 'stop',
-              },
-            ],
-            model: result.model?.id || model,
-            usage: {
-              prompt_tokens: 0,
-              completion_tokens: 0,
-              total_tokens: 0,
-            },
-          };
+          if (isStreamingRequest) {
+            const encoder = new TextEncoder();
+            const readableStream = new ReadableStream({
+              start(controller) {
+                // Send content chunk
+                const contentChunk = {
+                  id: 'chatcmpl-' + Date.now(),
+                  object: 'chat.completion.chunk',
+                  created: Math.floor(Date.now() / 1000),
+                  model: result.model?.id || modelNameOption,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { content: result.response || '' },
+                      finish_reason: null,
+                    },
+                  ],
+                };
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(contentChunk)}\n\n`));
 
-          return new Response(JSON.stringify(openAIResponse), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          });
+                // Send final chunk with finish_reason and usage
+                const finalChunk = {
+                  id: 'chatcmpl-' + Date.now() + '-final',
+                  object: 'chat.completion.chunk',
+                  created: Math.floor(Date.now() / 1000),
+                  model: result.model?.id || modelNameOption,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {}, // Empty delta for final chunk
+                      finish_reason: 'stop',
+                    },
+                  ],
+                  usage: {
+                    // Parse token counts properly, fallback to 0 if not available
+                    prompt_tokens:
+                      result.model?.promptTokens && !isNaN(Number(result.model.promptTokens))
+                        ? Number(result.model.promptTokens)
+                        : 0,
+                    completion_tokens:
+                      result.model?.completionTokens && !isNaN(Number(result.model.completionTokens))
+                        ? Number(result.model.completionTokens)
+                        : 0,
+                    total_tokens:
+                      result.model?.totalTokens && !isNaN(Number(result.model.totalTokens))
+                        ? Number(result.model.totalTokens)
+                        : 0,
+                  },
+                };
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalChunk)}\n\n`));
+
+                // Send DONE signal
+                controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                controller.close();
+              },
+            });
+
+            return new Response(readableStream, {
+              status: 200,
+              headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                Connection: 'keep-alive',
+              },
+            });
+          } else {
+            // Original non-streaming response
+            const openAIResponse = {
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    content: result.response || '',
+                    role: 'assistant',
+                  },
+                  finish_reason: 'stop',
+                },
+              ],
+              model: result.model?.id || modelNameOption,
+              usage: {
+                // Corrected usage calculation here
+                prompt_tokens:
+                  result.model?.promptTokens && !isNaN(Number(result.model.promptTokens))
+                    ? Number(result.model.promptTokens)
+                    : 0,
+                completion_tokens:
+                  result.model?.completionTokens && !isNaN(Number(result.model.completionTokens))
+                    ? Number(result.model.completionTokens)
+                    : 0,
+                total_tokens:
+                  result.model?.totalTokens && !isNaN(Number(result.model.totalTokens))
+                    ? Number(result.model.totalTokens)
+                    : 0,
+              },
+            };
+
+            return new Response(JSON.stringify(openAIResponse), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
         } catch (error) {
           console.error('Error in VS LLM fetch override:', error);
-          throw error;
+
+          // Ensure a Response object is thrown or returned for the SDK
+          if (error instanceof Response) {
+            throw error;
+          }
+
+          throw new Response(JSON.stringify({ error: (error as Error).message }), { status: 500 });
         }
       },
     });
 
-    return vsCodeProvider(model);
+    return vsCodeProvider(modelNameOption);
   }
 }
