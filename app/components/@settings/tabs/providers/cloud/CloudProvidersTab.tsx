@@ -30,7 +30,8 @@ type ProviderName =
   | 'OpenRouter'
   | 'Perplexity'
   | 'Together'
-  | 'XAI';
+  | 'XAI'
+  | 'VS LLM';
 
 // Update the PROVIDER_ICONS type to use the ProviderName type
 const PROVIDER_ICONS: Record<ProviderName, IconType> = {
@@ -48,12 +49,14 @@ const PROVIDER_ICONS: Record<ProviderName, IconType> = {
   Perplexity: SiPerplexity,
   Together: BsCloud,
   XAI: BsRobot,
+  'VS LLM': TbCloudComputing,
 };
 
 // Update PROVIDER_DESCRIPTIONS to use the same type
 const PROVIDER_DESCRIPTIONS: Partial<Record<ProviderName, string>> = {
   Anthropic: 'Access Claude and other Anthropic models',
   OpenAI: 'Use GPT-4, GPT-3.5, and other OpenAI models',
+  'VS LLM': 'Access Microsoft VS LLM API with GitHub Copilot integration',
 };
 
 const CloudProvidersTab = () => {

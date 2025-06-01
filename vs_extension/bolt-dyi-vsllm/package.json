@@ -1,0 +1,109 @@
+{
+  "name": "bolt-dyi-vsllm",
+  "displayName": "VS Code LLM Bridge",
+  "description": "Bridge to VS Code LLM API - provides HTTP REST API for external processes",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [{
+      "command": "bolt-dyi-vsllm.startServer",
+      "title": "Start LLM Bridge Server",
+      "icon": "$(play)"
+    }, {
+      "command": "bolt-dyi-vsllm.stopServer", 
+      "title": "Stop LLM Bridge Server",
+      "icon": "$(stop)"
+    }, {
+      "command": "bolt-dyi-vsllm.refreshView",
+      "title": "Refresh",
+      "icon": "$(refresh)"
+    }, {
+      "command": "bolt-dyi-vsllm.openChat",
+      "title": "Open Chat Window",
+      "icon": "$(comment-discussion)"
+    }, {
+      "command": "bolt-dyi-vsllm.selectModel",
+      "title": "Select LLM Model",
+      "icon": "$(settings-gear)"
+    }],
+    "viewsContainers": {
+      "activitybar": [{
+        "id": "bolt-dyi-vsllm",
+        "title": "Bolt DYI",
+        "icon": "$(zap)"
+      }]
+    },
+    "views": {
+      "bolt-dyi-vsllm": [{
+        "id": "bolt-dyi-vsllm-view",
+        "name": "Server Control",
+        "when": "true",
+        "icon": "$(zap)"
+      }, {
+        "id": "bolt-dyi-vsllm-chat",
+        "name": "LLM Chat",
+        "when": "true",
+        "icon": "$(comment-discussion)"
+      }, {
+        "id": "bolt-dyi-vsllm-webview",
+        "name": "Chat Interface", 
+        "type": "webview",
+        "when": "true",
+        "icon": "$(comment-discussion)"
+      }]
+    },
+    "menus": {
+      "view/title": [{
+        "command": "bolt-dyi-vsllm.refreshView",
+        "when": "view == bolt-dyi-vsllm-view",
+        "group": "navigation"
+      }, {
+        "command": "bolt-dyi-vsllm.openChat",
+        "when": "view == bolt-dyi-vsllm-chat",
+        "group": "navigation"
+      }, {
+        "command": "bolt-dyi-vsllm.selectModel",
+        "when": "view == bolt-dyi-vsllm-chat",
+        "group": "navigation"
+      }],
+      "view/item/context": [{
+        "command": "bolt-dyi-vsllm.startServer",
+        "when": "view == bolt-dyi-vsllm-view",
+        "group": "inline"
+      }],
+      "editor/context": [{
+        "command": "bolt-dyi-vsllm.startServer",
+        "group": "navigation"
+      }]
+    },
+    "keybindings": [{
+      "command": "bolt-dyi-vsllm.startServer",
+      "key": "ctrl+shift+l",
+      "mac": "cmd+shift+l"
+    }]
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "vscode-test"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.100.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "eslint": "^9.25.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
